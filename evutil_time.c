@@ -43,13 +43,20 @@
 #ifndef EVENT__HAVE_GETTIMEOFDAY
 #include <sys/timeb.h>
 #endif
-#if !defined(EVENT__HAVE_NANOSLEEP) && !defined(EVENT_HAVE_USLEEP) && \
+#if !defined(EVENT__HAVE_NANOSLEEP) && !defined(EVENT__HAVE_USLEEP) && \
 	!defined(_WIN32)
 #include <sys/select.h>
 #endif
 #include <time.h>
 #include <sys/stat.h>
 #include <string.h>
+
+/** evutil_usleep_() */
+#if defined(_WIN32)
+#elif defined(EVENT__HAVE_NANOSLEEP)
+#elif defined(EVENT__HAVE_USLEEP)
+#include <unistd.h>
+#endif
 
 #include "event2/util.h"
 #include "util-internal.h"
@@ -134,8 +141,42 @@ evutil_usleep_(const struct timeval *tv)
 	sleep(tv->tv_sec);
 	usleep(tv->tv_usec);
 #else
-	select(0, NULL, NULL, NULL, tv);
+	{
+		struct timeval tv2 = *tv;
+		select(0, NULL, NULL, NULL, &tv2);
+	}
 #endif
+}
+
+int
+evutil_date_rfc1123(char *date, const size_t datelen, const struct tm *tm)
+{
+	static const char *DAYS[] =
+		{ "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+	static const char *MONTHS[] =
+		{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+
+	time_t t = time(NULL);
+
+#ifndef _WIN32
+	struct tm sys;
+#endif
+
+	/* If `tm` is null, set system's current time. */
+	if (tm == NULL) {
+#ifdef _WIN32
+		/** TODO: detect _gmtime64()/_gmtime64_s() */
+		tm = gmtime(&t);
+#else
+		gmtime_r(&t, &sys);
+		tm = &sys;
+#endif
+	}
+
+	return evutil_snprintf(
+		date, datelen, "%s, %02d %s %4d %02d:%02d:%02d GMT",
+		DAYS[tm->tm_wday], tm->tm_mday, MONTHS[tm->tm_mon],
+		1900 + tm->tm_year, tm->tm_hour, tm->tm_min, tm->tm_sec);
 }
 
 /*
